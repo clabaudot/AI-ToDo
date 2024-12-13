@@ -20,7 +20,7 @@ Step 4 : send regular notifications during the week measuring the progress and m
 
 ## 1. Input Data Used
 The input data is a list of text representing a todo list for the week.  
-example: ('bike ride', 'pay electricity bill', 'decorate house for christmas', 'listen to podcast ABC', 'call my friend Linda') 
+example: ('bike ride', 'pay electricity bill', 'decorate house for christmas', 'clean the bathroom', 'call my friend Linda') 
 
 ## 2. Output Data
 The output data is a JSON file containing the same list of tasks (and maybe subtasks) with an estimated duration, a type, a difficulty level, an indicator if it's inside or outside, an indicator if it requires travelling, a suggested time in the week to do it.  
