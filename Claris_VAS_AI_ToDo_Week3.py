@@ -26,9 +26,37 @@ from datetime import datetime, timedelta
 #openai_key = userdata.get('openaikey')
 
 # Get API key from environment variable
-openai_key = os.environ.get('MYOPENAIKEY')
-if not openai_key:
-    print("Warning: MYOPENAIKEY environment variable not found")
+#openai_key = os.environ.get('MYOPENAIKEY')
+#if not openai_key:
+#    print("Warning: MYOPENAIKEY environment variable not found")
+
+# At the top of the file, after imports
+def get_openai_key():
+    """Get OpenAI API key with detailed error checking"""
+
+    api_key = os.environ.get('OPENAI_API_KEY')
+    if not api_key:
+        # Try alternative environment variable name
+        api_key = os.environ.get('MYOPENAIKEY')
+      
+    if not api_key:
+        print("Environment variables available:", list(os.environ.keys()))
+        raise ValueError("OpenAI API key not found in environment variables. "
+                        "Please ensure OPENAI_API_KEY or MYOPENAIKEY is set.")
+    return api_key
+
+# Replace the existing openai_key check with:
+try:
+    openai_key = get_openai_key()
+except ValueError as e:
+    print(f"Warning: {str(e)}")
+
+try:
+    from config import OPENAI_API_KEY
+    os.environ['OPENAI_API_KEY'] = OPENAI_API_KEY
+except ImportError:
+    # Fall back to environment variable
+    pass
 
 # Get Input Data
 # Example of input data. Format is a list of text
@@ -155,7 +183,7 @@ class ToDoAgent:
         # Set OpenAI API key if provided
         if api_key:
             openai.api_key = api_key
-            client = openai.OpenAI(api_key=api_key)
+            client = openai.Client()
         else:
             raise ValueError("API key is required")
 
@@ -192,7 +220,6 @@ class ToDoAgent:
                 }
             ],
             model="gpt-4o-mini",
-            #model="gpt-3.5-turbo" OLD model,
             temperature=1
         )
         # Parse and return the JSON response
@@ -206,7 +233,7 @@ class ToDoAgent:
         # Set OpenAI API key if provided
         if api_key:
             openai.api_key = api_key
-            client = openai.OpenAI(api_key=api_key)
+            client = openai.Client()
         else:
             raise ValueError("API key is required")
 
