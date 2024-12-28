@@ -1,11 +1,8 @@
 # Install necessary packages , just ONE TIME, comment after.
 
-#%pip install --upgrade openai=1.35.14
-#%pip install google-auth-oauthlib google-auth-httplib2 google-api-python-client#%pip install --upgrade openai httpx==0.23.0
+#%pip install --upgrade openai
+#%pip install google-auth-oauthlib google-auth-httplib2 google-api-python-client
 #%pip install --upgrade gradio
-
-# Install necessary packages with compatible versions
-#%pip install openai==1.3.0 httpx==0.24.1 httpcore==0.18.0
 
 # Import Libraries
 import random, openai, json, os
@@ -68,6 +65,7 @@ input_data = """
 output_data = """
 list of tasks (and maybe subtasks) with an estimated duration, a category, a difficulty level, an indicator if it's inside or outside, an indicator if it requires travelling, a suggested time in the week to do it.
 """
+
 # Add these models at the top of the file, after imports
 # Structured data
 class TodoTask(BaseModel):
@@ -96,6 +94,7 @@ class TaskInCalendar(BaseModel):
 class WeeklyTasksInCalendar(BaseModel):
     tasks: list[TaskInCalendar]
 
+# SHould be deleted
 class TaskSchedule(BaseModel):
     task_id: str
     task_name: str
@@ -104,6 +103,7 @@ class TaskSchedule(BaseModel):
     duration_minutes: int
     difficulty_level: str
 
+# SHould be deleted
 class WeeklySchedule(BaseModel):
     tasks: List[TaskSchedule]
 
@@ -222,11 +222,12 @@ class ToDoAgent:
           For long or difficult tasks, create meaningful smaller subtasks.
           For subtasks, use the version-style task_ID format (e.g., 1.1, 1.2, 1.3 for subtasks of task 1).
 
-          Return only a JSON array of the tasks in {TodoTaskList} format.
+          Return an array of the tasks in {TodoTaskList} format.
           """
+          #Return only a JSON array of the tasks in {TodoTaskList} format.
 
         # Call OpenAI API to generate questions
-        response = openai.chat.completions.create(
+        response = openai.beta.chat.completions.parse(
             messages=[
                 {"role": "system", "content": prompt},
                 {"role": "system", "name": "example_user",      "content": "Dinner with friends"},
@@ -236,15 +237,13 @@ class ToDoAgent:
                 {"role": "system", "name": "example_user",      "content": "Plan a trip to Italy"},
                 {"role": "system", "name": "example_assistant", "content": "3.1 Decide on the dates, 3.2 check the flights, 3.3 book the flights, 3.4 define an itinerary, 3.5 plan trasnportation, 3.6 book hotels, 3.7 plan visits"},
             ],
-            #model="gpt-4o-mini",
-            model="gpt-4",
+            model="gpt-4o-mini",
             temperature=1,
             response_format=TodoTaskList
         )
         
         # Parse and return the JSON response
         return response.choices[0].message.content
-
 
     def predict_timeslots_with_llm(self, tasks_subtasks, api_key=None):
         """
@@ -285,10 +284,12 @@ class ToDoAgent:
           - start_time: HH:MM format (24-hour)
           - end_time: HH:MM format (24-hour)
 
-          Return only the JSON array, no additional text.
+          Return an array of the tasks in {WeeklyTasksInCalendar} format.
+          
         """
+        #Return only the JSON array, no additional text.
 
-        response = client.chat.completions.create(
+        response = client.beta.chat.completions.parse(
             messages=[
                 {
                     "role": "user",
@@ -296,7 +297,6 @@ class ToDoAgent:
                 }
             ],
             model="gpt-4o-mini",
-            #model="gpt-3.5-turbo", OLD model
             response_format=WeeklyTasksInCalendar,
             temperature=0.1
         )
@@ -344,6 +344,77 @@ class ToDoAgent:
 # Initialize the agent
 agent = ToDoAgent()
 
+# Should be deleted
+# Function to convert TodoTask list to HTML table
+def tasks_to_html_table(tasks):
+    if not tasks:
+        return "<p>No tasks available.</p>"
+    
+    html = "<table border='1'>"
+    # Add table headers
+    html += "<tr>"
+    for field in TodoTask.__fields__.keys():
+        html += f"<th>{field}</th>"
+    html += "</tr>"
+    # Add table rows
+    for task in tasks:
+        html += "<tr>"
+        for field in TodoTask.__fields__.keys():
+            html += f"<td>{getattr(task, field)}</td>"
+        html += "</tr>"
+    html += "</table>"
+    return html
+
+
+# Should be deleted
+# Function to create an HTML table from the tasks
+def generate_html_table(tasks: List[TodoTask]) -> str:
+    html = "<table border='1' style='border-collapse: collapse; width: 100%;'>"
+    html += "<tr>" + "".join(f"<th>{field}</th>" for field in TodoTask.__fields__.keys()) + "</tr>"
+    for task in tasks:
+        html += "<tr>" + "".join(f"<td>{getattr(task, field)}</td>" for field in TodoTask.__fields__.keys()) + "</tr>"
+    html += "</table>"
+    return html
+
+# Extract subtasks from the main tasks list
+def extract_subtasks(tasks: List[TodoTask]):
+    main_tasks = []
+    all_subtasks = []
+    
+    for task in tasks:
+        if task.has_subtasks:  # If the task has subtasks
+            subtasks = task.subtasks if hasattr(task, 'subtasks') else []
+            all_subtasks.extend(subtasks)
+        else:
+            main_tasks.append(task)
+    
+    return main_tasks, all_subtasks
+
+# Function to create an HTML table from the tasks and subtasks
+def generate_html_table_with_subtasks(main_tasks: List[TodoTask], subtasks: List[TodoTask]) -> str:
+    html = "<table class='styled-table'>"
+    # Table headers
+    html += "<thead><tr>" + "".join(f"<th>{field}</th>" for field in TodoTask.__fields__.keys()) + "</tr></thead><tbody>"
+    
+    for task in main_tasks:
+        html += "<tr>"
+        for field in TodoTask.__fields__.keys():
+            html += f"<td>{getattr(task, field)}</td>"
+        html += "</tr>"
+        
+        # Add subtasks as a nested table
+        task_subtasks = [sub for sub in subtasks if sub.parent_task_ID == task.task_ID]
+        if task_subtasks:
+            html += f"<tr><td colspan='{len(TodoTask.__fields__.keys())}'>"
+            html += "<table class='subtasks styled-table'>"
+            html += "<thead><tr>" + "".join(f"<th>{field}</th>" for field in TodoTask.__fields__.keys()) + "</tr></thead><tbody>"
+            for subtask in task_subtasks:
+                html += "<tr>" + "".join(f"<td>{getattr(subtask, field)}</td>" for field in TodoTask.__fields__.keys()) + "</tr>"
+            html += "</tbody></table></td></tr>"
+    
+    html += "</tbody></table>"
+    return html
+
 def process_todo_list(todo_input):
     """
     Process the todo list input and return tasks with their characteristics
@@ -366,42 +437,22 @@ def process_todo_list(todo_input):
         
         # Clean up the response
         if generated_text.startswith("```json"):
-            generated_text = generated_text[len("```json"):]
+            generated_text = generated_text[len("```json"):].strip()
         if generated_text.endswith("```"):
-            generated_text = generated_text[:-len("```")]
-        json_tasks = generated_text.strip()
+            generated_text = generated_text[:-len("```")].strip()
         
         # Parse JSON
-        tasks = json.loads(json_tasks)
+        tasks_data = json.loads(generated_text)
         
-        # Create main tasks dataframe
-        df_main_tasks = pd.DataFrame(tasks)
-        main_tasks_html = df_main_tasks.to_html(
-            classes='styled-table',
-            index=False,
-            float_format=lambda x: '{:.0f}'.format(x) if pd.notnull(x) else ''
-        )
+        # Ensure tasks_data is a list of dictionaries
+        if isinstance(tasks_data, dict):
+            tasks_data = tasks_data.get('tasks', [])
         
-        # Process subtasks if they exist
-        subtasks = []
-        for task in tasks:
-            if 'subtasks' in task and task['subtasks']:
-                for subtask in task['subtasks']:
-                    subtask['parent_task_ID'] = task['task_ID']
-                    subtasks.append(subtask)
+        # Convert JSON data to TodoTask objects
+        main_tasks_list = [TodoTask(**task) for task in tasks_data if isinstance(task, dict)]
         
-        # Create subtasks dataframe if exists
-        subtasks_html = ""
-        if subtasks:
-            df_subtasks = pd.DataFrame(subtasks)
-            subtasks_html = "<h3>Subtasks:</h3>" + df_subtasks.to_html(
-                classes='styled-table',
-                index=False,
-                float_format=lambda x: '{:.0f}'.format(x) if pd.notnull(x) else ''
-            )
-        
-        # Add CSS for table styling
-        css = """
+        # Add CSS for table styling and JavaScript for toggling subtasks
+        css_js = """
         <style>
         .styled-table {
             border-collapse: collapse;
@@ -429,18 +480,26 @@ def process_todo_list(todo_input):
         .styled-table tbody tr:last-of-type {
             border-bottom: 2px solid #009879;
         }
+        .subtasks {
+            display: none;
+        }
         </style>
+        <script>
+        function toggleSubtasks(taskID) {
+            var subtasks = document.getElementById('subtasks-' + taskID);
+            if (subtasks.style.display === 'none') {
+                subtasks.style.display = 'table-row-group';
+            } else {
+                subtasks.style.display = 'none';
+            }
+        }
+        </script>
         """
         
         # Combine all HTML
-        result_html = f"""
-        {css}
-        <h3>Main Tasks:</h3>
-        {main_tasks_html}
-        {subtasks_html}
-        """
-        
-        return result_html
+        main_tasks, subtasks = extract_subtasks(main_tasks_list)
+        html_result = generate_html_table_with_subtasks(main_tasks, subtasks)
+        return html_result
         
     except Exception as e:
         import traceback
@@ -464,4 +523,4 @@ iface = gr.Interface(
 )
 
 if __name__ == "__main__":
-    iface.launch(share=False)    
+    iface.launch(share=False)
