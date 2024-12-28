@@ -454,22 +454,43 @@ def process_todo_list(todo_input):
         # Add CSS for table styling and JavaScript for toggling subtasks
         css_js = """
         <style>
+        .task-container {
+            font-size: 0.8em;  /* Reduced font size */
+            margin-top: 10px;
+        }
         .styled-table {
-            border-collapse: collapse;
-            margin: 25px 0;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin: 10px 0;  /* Reduced margin */
             font-size: 0.9em;
             font-family: sans-serif;
-            min-width: 400px;
+            width: 100%;  /* Full width */
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+            border-radius: 10px;
+            overflow: hidden;
         }
         .styled-table thead tr {
             background-color: #009879;
             color: #ffffff;
             text-align: left;
+            font-size: 0.9em;  /* Reduced header font size */
+        }
+        .styled-table th:first-child {
+            border-top-left-radius: 10px;
+        }
+        .styled-table th:last-child {
+            border-top-right-radius: 10px;
+        }
+        .styled-table tbody tr:last-child td:first-child {
+            border-bottom-left-radius: 10px;
+        }
+        .styled-table tbody tr:last-child td:last-child {
+            border-bottom-right-radius: 10px;
         }
         .styled-table th,
         .styled-table td {
-            padding: 12px 15px;
+            padding: 8px 10px;  /* Reduced padding */
+            font-size: 0.85em;  /* Reduced cell font size */
         }
         .styled-table tbody tr {
             border-bottom: 1px solid #dddddd;
@@ -482,6 +503,13 @@ def process_todo_list(todo_input):
         }
         .subtasks {
             display: none;
+            margin-left: 20px;  /* Indent subtasks */
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        h3 {
+            font-size: 1em;  /* Reduced heading size */
+            margin: 10px 0;
         }
         </style>
         <script>
@@ -499,28 +527,42 @@ def process_todo_list(todo_input):
         # Combine all HTML
         main_tasks, subtasks = extract_subtasks(main_tasks_list)
         html_result = generate_html_table_with_subtasks(main_tasks, subtasks)
-        return html_result
+        result_html = f"""
+        {css_js}
+        <div class="task-container">
+            <h3>Main Tasks:</h3>
+            {html_result}
+        </div>
+        """
+        return result_html
         
     except Exception as e:
         import traceback
         return f"Error processing todo list: {str(e)}\n{traceback.format_exc()}"
 
-# Create Gradio interface
-iface = gr.Interface(
-    fn=process_todo_list,
-    inputs=[
-        gr.Textbox(
-            lines=3,
+# Create Gradio interface using Blocks
+with gr.Blocks(theme=gr.themes.Soft()) as iface:
+    gr.Markdown("# AI ToDo Assistant")
+    gr.Markdown("Welcome to your AI ToDo assistant. I will help you schedule the tasks you would like to accomplish this week.\nEnter your tasks and get them organized with estimated durations, difficulty levels, and other characteristics.")
+    
+    with gr.Row():
+        text_input = gr.Textbox(
+            lines=2,
             placeholder="Enter your tasks, separated by commas (e.g., bike ride, pay bills, clean house)",
-            label="Todo List"
+            label="My To-Do List for this week"
         )
-    ],
-    outputs=gr.HTML(),
-    title="AI ToDo Assistant",
-    description="Welcome to your AI ToDo assistant. I will help you schedule the tasks you would like to accomplish this week.\nEnter your tasks and get them organized with estimated durations, difficulty levels, and other characteristics.",
-    examples=[["bike ride, pay the bills, decorate house for christmas, clean my home, host dinner with Jack&Jill"]],
-    theme=gr.themes.Soft()
-)
+    
+    with gr.Row():
+        generate_btn = gr.Button("Generate Tasks")
+    
+    output_html = gr.HTML()
+    
+    # Connect the button click event to the process_todo_list function
+    generate_btn.click(
+        fn=process_todo_list,
+        inputs=text_input,
+        outputs=output_html
+    )
 
 if __name__ == "__main__":
     iface.launch(share=False)
