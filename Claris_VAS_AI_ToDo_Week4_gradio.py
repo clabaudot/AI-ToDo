@@ -150,31 +150,20 @@ class GoogleCalendarIntegration:
     
     def create_calendar_events(self, weekly_schedule):
         """Create calendar events for scheduled tasks"""
-        # Get the current date for the start of the week (Monday)
-        today = datetime.now()
-        monday = today - timedelta(days=today.weekday())
-        
-        for task in weekly_schedule.tasks:
-            # Convert task time to datetime
-            task_time = datetime.strptime(f"{task.day} {task.start_time.strftime('%H:%M')}", 
-                                        "%A %H:%M")
-            
-            # Adjust the date to the correct day of the current week
-            days_ahead = task_time.weekday()
-            task_date = monday + timedelta(days=days_ahead)
-            
-            start_time = datetime.combine(task_date.date(), task.start_time)
-            end_time = start_time + timedelta(minutes=task.duration_minutes)
+        for task_in_calendar in weekly_schedule.tasks:
+            # Create event using the date and time strings directly
+            start_datetime = f"{task_in_calendar.start_date}T{task_in_calendar.start_time}:00"
+            end_datetime = f"{task_in_calendar.end_date}T{task_in_calendar.end_time}:00"
             
             event = {
-                'summary': f"ToDo: {task.task_name}",
-                'description': f"Task ID: {task.task_id}\nDifficulty: {task.difficulty_level}",
+                'summary': f"ToDo: {task_in_calendar.task.task_name}",
+                'description': f"Task ID: {task_in_calendar.task.task_ID}\nDifficulty: {task_in_calendar.task.difficulty_level}",
                 'start': {
-                    'dateTime': start_time.isoformat(),
+                    'dateTime': start_datetime,
                     'timeZone': 'America/Los_Angeles',  # Pacific Time
                 },
                 'end': {
-                    'dateTime': end_time.isoformat(),
+                    'dateTime': end_datetime,
                     'timeZone': 'America/Los_Angeles',  # Pacific Time
                 },
                 'reminders': {
@@ -184,9 +173,9 @@ class GoogleCalendarIntegration:
             
             try:
                 self.service.events().insert(calendarId='primary', body=event).execute()
-                print(f"Created calendar event for: {task.task_name}")
+                print(f"Created calendar event for: {task_in_calendar.task.task_name}")
             except Exception as e:
-                print(f"Error creating event for {task.task_name}: {str(e)}")
+                print(f"Error creating event for {task_in_calendar.task.task_name}: {str(e)}")
                 
 
 # Create my Agent
@@ -742,6 +731,34 @@ def process_my_schedule(todo_input):
         import traceback
         return f"Error processing schedule: {str(e)}\n{traceback.format_exc()}"
 
+# Add new function to handle calendar booking
+def book_my_calendar(todo_input):
+    """Book the scheduled tasks in Google Calendar"""
+    global generated_tasks, generated_schedule
+    try:
+        if not generated_tasks:
+            return "Please generate tasks first by clicking 'Generate Tasks' button"
+        
+        if not generated_schedule:
+            return "Please generate schedule first by clicking 'Generate My Schedule' button"
+
+        api_key = get_openai_key()
+        openai.api_key = api_key
+
+        # Use the agent to schedule tasks in calendar
+        agent.schedule_tasks_in_calendar(generated_schedule)
+        
+        return """
+        <div style='padding: 20px; background-color: #e8f5e9; border-radius: 10px; margin: 20px 0;'>
+            <h3 style='color: #2e7d32; margin-top: 0;'>✅ Tasks Successfully Booked!</h3>
+            <p>Your tasks have been added to your Google Calendar.</p>
+            <p>Check your calendar to see the scheduled events.</p>
+        </div>
+        """
+    except Exception as e:
+        import traceback
+        return f"Error booking calendar: {str(e)}\n{traceback.format_exc()}"
+
 # Create Gradio interface using Blocks
 with gr.Blocks(theme=gr.themes.Soft()) as iface:
     gr.Markdown("<div style=\"text-align: center;font-size: 24px; font-weight: bold;\">AI ToDo Assistant</div>")
@@ -779,7 +796,7 @@ with gr.Blocks(theme=gr.themes.Soft()) as iface:
     )
     
     calendar_btn.click(
-        fn=lambda x: "Calendar booking feature coming soon...",
+        fn=book_my_calendar,
         inputs=text_input,
         outputs=output_html
     )
