@@ -278,6 +278,7 @@ class ToDoAgent:
         - Balance outdoor/indoor and fun/boring tasks across the week
         - If a task has subtasks, schedule only the subtasks
         - Make sure total duration of subtasks equals main task duration
+        - Schedule a task or subtask only once
 
         Return a JSON array in this exact format:
         {{
@@ -300,7 +301,7 @@ class ToDoAgent:
                     {"role": "user", "content": prompt}
                 ],
                 model="gpt-4o-mini",
-                temperature=0.1,
+                temperature=1,
                 response_format=WeeklyTasksInCalendar
             )
 
@@ -438,6 +439,9 @@ css_js = """
     margin: 20px 0;
     font-family: sans-serif;
 }
+.schedule-table thead tr {
+    background-color: #ffcccb !important;  /* Light red */
+}
 </style>
 <script>
 function toggleSubtaskTable(taskId) {
@@ -509,6 +513,9 @@ def generate_html_table_with_subtasks(main_tasks: List[TodoTask]) -> str:
 
 # Add at the top of the file after imports
 generated_tasks = None
+generated_schedule = None
+last_main_tasks_html = None
+last_subtasks_html = None
 
 def process_todo_list(todo_input):
     """
@@ -517,7 +524,7 @@ def process_todo_list(todo_input):
     Args:
         todo_input (str): Comma-separated list of tasks
     """
-    global generated_tasks
+    global generated_tasks, generated_schedule, last_main_tasks_html, last_subtasks_html
     try:
         # Get API key with detailed error checking
         api_key = get_openai_key()
@@ -581,75 +588,28 @@ def process_todo_list(todo_input):
         html_result_main = generate_html_table_with_subtasks(main_tasks_list)  # Use full main_tasks_list
         html_result_sub = generate_html_table_with_subtasks(subtasks) if subtasks else ""
         
-        result_html = f"""
-        {css_js}
-        <div class="task-container">
-            <h3>Main Tasks ({len(main_tasks_list)}):</h3>
-            {html_result_main}
-            {f'<h3>Sub Tasks ({len(subtasks)}):</h3>{html_result_sub}' if subtasks else ''}
-        </div>
-        """
-        return result_html
-        
-    except Exception as e:
-        import traceback
-        return f"Error processing todo list: {str(e)}\n{traceback.format_exc()}"
+        # Store the HTML for later use
+        last_main_tasks_html = html_result_main
+        last_subtasks_html = html_result_sub if subtasks else ""
 
-def process_my_schedule(todo_input):
-    """Process the todo list to generate a weekly schedule"""
-    global generated_tasks
-    try:
-        if not generated_tasks:
-            return "Please generate tasks first by clicking 'Generate Tasks' button"
-
-        api_key = get_openai_key()
-        openai.api_key = api_key
-
-        # Separate main tasks and subtasks
+        # After generating tasks, immediately create schedule
         tasks_to_schedule = []
-        for task in generated_tasks:
+        for task in main_tasks_list:
             if task.has_subtasks and task.subtasks:
-                # Add all subtasks to scheduling
                 tasks_to_schedule.extend(task.subtasks)
             else:
-                # Add main task if it has no subtasks
                 tasks_to_schedule.append(task)
-
-        # Get schedule from OpenAI
-        weekly_schedule = agent.predict_timeslots_with_llm(tasks_to_schedule, api_key=api_key)
         
-        if weekly_schedule:
-            # Generate HTML table for schedule
-            html = """
-            <style>
-            .schedule-table {
-                width: 80%;
-                border-collapse: separate;
-                border-spacing: 0;
-                margin: 20px 0;
-                font-size: 1em;
-                box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
-                border-radius: 10px;
-                overflow: hidden;
-            }
-            .schedule-table thead tr {
-                background-color: #add8e6;
-                color: #ffffff;
-                text-align: left;
-            }
-            .schedule-table th,
-            .schedule-table td {
-                padding: 12px 15px;
-            }
-            .schedule-table tbody tr {
-                border-bottom: 1px solid #dddddd;
-            }
-            .schedule-table tbody tr:nth-of-type(even) {
-                background-color: #f3f3f3;
-            }
-            </style>
-            <table class="schedule-table">
-            <thead>
+        # Get schedule from OpenAI
+        generated_schedule = agent.predict_timeslots_with_llm(tasks_to_schedule, api_key=api_key)
+        
+        # Generate schedule HTML if available
+        schedule_html = ""
+        if generated_schedule:
+            schedule_html = """
+            <h3>Preliminary Schedule:</h3>
+            <table class='styled-table schedule-table'>
+            <thead class="schedule-header">
                 <tr>
                     <th>Task ID</th>
                     <th>Task Name</th>
@@ -662,19 +622,18 @@ def process_my_schedule(todo_input):
             <tbody>
             """
             
-            # Sort tasks by date and time (modified for string format)
+            # Sort tasks by date and time
             sorted_tasks = sorted(
-                weekly_schedule.tasks,
+                generated_schedule.tasks,
                 key=lambda x: (x.start_date, x.start_time)
             )
             
             for task_in_calendar in sorted_tasks:
                 task = task_in_calendar.task
-                # Add parent task ID for subtasks
                 task_id = task.task_ID
-                is_subtask = '.' in task_id  # Check if it's a subtask by looking for dot in ID
+                is_subtask = '.' in task_id
                 
-                html += f"""
+                schedule_html += f"""
                 <tr class="{'subtask' if is_subtask else 'main-task'}">
                     <td>{task_id}</td>
                     <td>{task.task_name}</td>
@@ -684,11 +643,100 @@ def process_my_schedule(todo_input):
                     <td>{task.difficulty_level}</td>
                 </tr>
                 """
+            schedule_html += "</tbody></table>"
+
+        # Combine all HTML sections
+        result_html = f"""
+        {css_js}
+        <div class="task-container">
+            <h3>Main Tasks ({len(main_tasks_list)}):</h3>
+            {html_result_main}
+            {f'<h3>Sub Tasks ({len(subtasks)}):</h3>{html_result_sub}' if subtasks else ''}
+            {schedule_html}
+        </div>
+        """
+        return result_html
+        
+    except Exception as e:
+        import traceback
+        return f"Error processing todo list: {str(e)}\n{traceback.format_exc()}"
+
+def process_my_schedule(todo_input):
+    """Process the todo list to generate a weekly schedule"""
+    global generated_tasks, generated_schedule, last_main_tasks_html, last_subtasks_html
+    try:
+        if not generated_tasks:
+            return "Please generate tasks first by clicking 'Generate Tasks' button"
+
+        api_key = get_openai_key()
+        openai.api_key = api_key
+
+        # Always generate a new schedule when this function is called
+        tasks_to_schedule = []
+        for task in generated_tasks:
+            if task.has_subtasks and task.subtasks:
+                tasks_to_schedule.extend(task.subtasks)
+            else:
+                tasks_to_schedule.append(task)
+
+        # Get new schedule from OpenAI
+        generated_schedule = agent.predict_timeslots_with_llm(tasks_to_schedule, api_key=api_key)
+        
+        if not generated_schedule:
+            return "Failed to generate schedule. Please try again."
+
+        # Generate HTML table for schedule
+        schedule_html = """
+        <h3>Weekly Schedule:</h3>
+        <table class='styled-table schedule-table'>
+        <thead class="schedule-header">
+            <tr>
+                <th>Task ID</th>
+                <th>Task Name</th>
+                <th>Date</th>
+                <th>Start Time</th>
+                <th>Duration (min)</th>
+                <th>Difficulty</th>
+            </tr>
+        </thead>
+        <tbody>
+        """
+        
+        # Sort tasks by date and time
+        sorted_tasks = sorted(
+            generated_schedule.tasks,
+            key=lambda x: (x.start_date, x.start_time)
+        )
+        
+        for task_in_calendar in sorted_tasks:
+            task = task_in_calendar.task
+            task_id = task.task_ID
+            is_subtask = '.' in task_id
             
-            html += "</tbody></table>"
-            return html
-            
-        return "No schedule generated."
+            schedule_html += f"""
+            <tr class="{'subtask' if is_subtask else 'main-task'}">
+                <td>{task_id}</td>
+                <td>{task.task_name}</td>
+                <td>{task_in_calendar.start_date}</td>
+                <td>{task_in_calendar.start_time}</td>
+                <td>{task.estimated_duration}</td>
+                <td>{task.difficulty_level}</td>
+            </tr>
+            """
+        
+        schedule_html += "</tbody></table>"
+        
+        # Combine all sections
+        result_html = f"""
+        {css_js}
+        <div class="task-container">
+            <h3>Main Tasks:</h3>
+            {last_main_tasks_html}
+            {f'<h3>Sub Tasks:</h3>{last_subtasks_html}' if last_subtasks_html else ''}
+            {schedule_html}
+        </div>
+        """
+        return result_html
         
     except Exception as e:
         import traceback
@@ -738,3 +786,5 @@ with gr.Blocks(theme=gr.themes.Soft()) as iface:
 
 if __name__ == "__main__":
     iface.launch(share=False)
+
+
