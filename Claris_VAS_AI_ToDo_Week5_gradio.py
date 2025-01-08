@@ -337,11 +337,11 @@ class ToDoAgent:
         - Schedule tasks only on these dates: {", ".join(date_examples)}
         - Do not book tasks during busy times: {busy_times}
         - Do not book 2 tasks at the same time
-        - Avoid: Mon-Fri 9am-5pm (work hours)
-        - Avoid: 11pm-7am (sleep)
+        - Do not book Mon-Fri 9am-5pm during working hours
+        - Do not book during sleep time 11pm-7am
         - For outdoor tasks and tasks with travel: leave 1h available before and after the task
-        - Use lunch (12-1pm) except Wednesdays
-        - Wednesday: avoid 8-9am and 5-6pm (commute)
+        - Booking during lunch time (12-1pm) is allowed except on Wednesdays
+        - Wednesday: do not book 8-9am and 5-6pm (commute)
         - Balance outdoor/indoor and fun/boring tasks across the week
         - If a task has subtasks, schedule only the subtasks
         - Make sure total duration of subtasks equals main task duration
