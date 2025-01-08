@@ -6,6 +6,7 @@
 
 # Import Libraries
 import random, openai, json, os
+import base64
 import pandas as pd
 #from google.colab import userdata
 from pydantic import BaseModel
@@ -271,6 +272,7 @@ class ToDoAgent:
 
           Each resulting task should be in JSON format following the {TodoTask} format
           For long or difficult tasks, create meaningful smaller subtasks.
+          Duration is in minutes.
           For subtasks, use the version-style task_ID format (e.g., 1.1, 1.2, 1.3 for subtasks of task 1).
           Requirements:
           1. Each task should be a separate main task with a unique task_ID (1, 2, 3, etc.)
@@ -334,9 +336,10 @@ class ToDoAgent:
         Requirements:
         - Schedule tasks only on these dates: {", ".join(date_examples)}
         - Do not book tasks during busy times: {busy_times}
+        - Do not book 2 tasks at the same time
         - Avoid: Mon-Fri 9am-5pm (work hours)
         - Avoid: 11pm-7am (sleep)
-        - For outdoor tasks: add 1h before/after for travel
+        - For outdoor tasks and tasks with travel: leave 1h available before and after the task
         - Use lunch (12-1pm) except Wednesdays
         - Wednesday: avoid 8-9am and 5-6pm (commute)
         - Balance outdoor/indoor and fun/boring tasks across the week
@@ -455,6 +458,13 @@ css_js = """
 
 .gradio-container {
     max-width: 95% !important;  /* Increase from default */
+}
+
+/* Header image */
+.header-image {
+    width: 100%;
+    height: auto;
+    margin-bottom: 20px;
 }
 
 /* Task container modifications */
@@ -663,6 +673,41 @@ def get_calendar_embed_html():
     """
     return calendar_html
 
+""" def create_header_image():
+    # Get API key 
+    api_key = get_openai_key()
+        
+    # Set OpenAI API key globally
+    openai.api_key = api_key
+    
+    # Define the prompt for DALL-E
+    prompt = "an image of many post-it notes with lists of notes on them flying away in a wave"
+
+    # Generate the image
+    response = openai.Image.create(
+        prompt=prompt,
+        n=1,
+        size="1024x200"
+    )
+
+    # Get the image URL
+    image_url = response['data'][0]['url']
+
+    # Download the image data
+    image_data = openai.Image.retrieve(response['data'][0]['id'])
+    image_base64 = image_data['data']
+    image_bytes = base64.b64decode(image_base64)
+
+    # Save the image locally
+    local_image_path = "C:\\___Clarisse\\___Experience\\Courses\\VAS_AI project in 6 weeks\\My work\\ToDo_header_image.png"
+    with open(local_image_path, "wb") as f:
+        f.write(image_bytes)
+    
+    return local_image_path """
+
+# Generate the header image and get the local path
+#header_image_path = create_header_image()
+
 # Update the CSS in generate_html_table_with_subtasks function
 def generate_html_table_with_subtasks(main_tasks: List[TodoTask]) -> str:
     # Define the columns we want to show and their display names
@@ -671,9 +716,9 @@ def generate_html_table_with_subtasks(main_tasks: List[TodoTask]) -> str:
         'task_name': 'Task',  # Shortened
         'estimated_duration': 'Dur.',  # Shortened
         'category': 'Cat.',  # Shortened
-        'difficulty_level': 'Diff.'  # Shortened
-        #'ind_outside': 'Out',  # Shortened
-        #'ind_travel': 'Travel',
+        'difficulty_level': 'Diff.',  # Shortened
+        'ind_outside': 'Out',  # Shortened
+        'ind_travel': 'Travel'
         #'has_subtasks': 'Sub'  # Shortened
     }
     
@@ -807,7 +852,7 @@ def process_todo_list(todo_input):
             generated_text = generated_text[:-len("```")].strip()
         
         # Parse JSON and ensure it's in the correct format
-        print("Raw response:", generated_text)
+        #print("CLA DEBUG Raw response:", generated_text)
         tasks_data = json.loads(generated_text)
         #print("CLA DEBUG JSON Tasks data:", tasks_data)
         print(f"Number of main tasks: {len(tasks_data['tasks'])}")
@@ -911,8 +956,6 @@ def process_my_schedule(todo_input):
                 <th>Task</th>
                 <th>Date & Time</th>
                 <th>Dur.</th>
-                <th>Cat.</th>
-                <th>Diff.</th>
             </tr>
         </thead>
         <tbody>
@@ -936,8 +979,6 @@ def process_my_schedule(todo_input):
                 <td>{task.task_name}</td>
                 <td>{date_time}</td>
                 <td>{task.estimated_duration}</td>
-                <td>{task.category}</td>
-                <td>{task.difficulty_level}</td>
             </tr>
             """
         
@@ -974,7 +1015,7 @@ def process_my_schedule(todo_input):
 # Add new function to handle calendar booking
 def book_my_calendar(todo_input):
     """Book the scheduled tasks in Google Calendar"""
-    global generated_tasks, generated_schedule
+    global generated_tasks, generated_schedule, last_main_tasks_html, last_subtasks_html
     try:
         if not generated_tasks:
             return "Please generate tasks first by clicking 'Generate Tasks' button"
@@ -988,19 +1029,83 @@ def book_my_calendar(todo_input):
         # Use the agent to schedule tasks in calendar
         agent.schedule_tasks_in_calendar(generated_schedule)
         
-        return """
-        <div style='padding: 20px; background-color: #e8f5e9; border-radius: 10px; margin: 20px 0;'>
-            <h3 style='color: #2e7d32; margin-top: 0;'>✅ Tasks Successfully Booked!</h3>
-            <p>Your tasks have been added to your Google Calendar.</p>
-            <p>Check your calendar to see the scheduled events.</p>
+        # Generate HTML table for schedule
+        schedule_html = """
+        <h3>Weekly Schedule:</h3>
+        <table class='styled-table schedule-table'>
+        <thead class="schedule-header">
+            <tr>
+                <th>ID</th>
+                <th>Task</th>
+                <th>Date & Time</th>
+                <th>Dur.</th>
+            </tr>
+        </thead>
+        <tbody>
+        """
+        
+        # Sort tasks by date and time
+        sorted_tasks = sorted(
+            generated_schedule.tasks,
+            key=lambda x: (x.start_date, x.start_time)
+        )
+        
+        for task_in_calendar in sorted_tasks:
+            task = task_in_calendar.task
+            task_id = task.task_ID
+            is_subtask = '.' in task_id
+            date_time = f"{task_in_calendar.start_date} {task_in_calendar.start_time}"
+            
+            schedule_html += f"""
+            <tr class="{'subtask' if is_subtask else 'main-task'}">
+                <td>{task_id}</td>
+                <td>{task.task_name}</td>
+                <td>{date_time}</td>
+                <td>{task.estimated_duration}</td>
+            </tr>
+            """
+        
+        schedule_html += "</tbody></table>"
+        
+        # Combine all sections with success message
+        result_html = f"""
+        {css_js}
+        <div class="task-container">
+            <div class="flex-container">
+                <div class="tasks-section" style="flex: 1; min-width: 0;">
+                    <h3>Main Tasks:</h3>
+                    {last_main_tasks_html}
+                    {f'<h3>Sub Tasks:</h3>{last_subtasks_html}' if last_subtasks_html else ''}
+                </div>
+                <div class="right-section" style="flex: 1; min-width: 300px;">
+                    <div class="schedule-section">
+                        {schedule_html}
+                    </div>
+                    <div style='padding: 20px; background-color: #e8f5e9; border-radius: 10px; margin: 20px 0;'>
+                        <h3 style='color: #2e7d32; margin-top: 0;'>✅ Tasks Successfully Booked!</h3>
+                        <p>Your tasks have been added to your Google Calendar.</p>
+                        <p>Check your calendar to see the scheduled events.</p>
+                    </div>
+                    <div class="calendar-section" style="margin-top: 20px;">
+                        <h3>My Calendar:</h3>
+                        {get_calendar_embed_html()}
+                    </div>
+                </div>
+            </div>
         </div>
         """
+        return result_html
+        
     except Exception as e:
         import traceback
         return f"Error booking calendar: {str(e)}\n{traceback.format_exc()}"
 
+#local_image_path = "C:\\___Clarisse\\___Experience\\Courses\\VAS_AI project in 6 weeks\\My work\\ToDo_header_image.png"
+local_image_path = "ToDo_header_image.png"
+
 # Create Gradio interface using Blocks
 with gr.Blocks(theme=gr.themes.Soft()) as iface:
+    gr.HTML(f'<img src="{local_image_path}" alt="Header Image" class="header-image">')
     gr.Markdown("<div style=\"text-align: center;font-size: 24px; font-weight: bold;\">AI ToDo Assistant</div>")
     gr.Markdown("**Welcome to your AI ToDo assistant.** I will help you schedule the tasks you would like to accomplish this week.") 
     gr.Markdown("Enter your tasks and get them organized with estimated durations, difficulty levels, and other characteristics.")
